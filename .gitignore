@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv
+
+# Checkpoints & weights
+*.pt
+*.pth
+*.ckpt
+*.zip
+
+# Data
+*.npy
+*.npz
+*.h5
+*.hdf5
+
+# Logs & outputs
+*.log
+runs/
+outputs/
+wandb/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Environment
+.env

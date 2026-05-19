@@ -1,0 +1,113 @@
+# LeWorldModel — LunarLander Adaptation
+
+## Project Goal
+
+Adapt the **LeWorldModel (LeWM)** algorithm to the `LunarLander-v3` gymnasium environment.
+LeWM is a Joint Embedding Predictive Architecture (JEPA) that learns a latent world model from
+raw pixel observations end-to-end, without reconstruction losses, reward signals, or pre-trained
+encoders. We will implement it from scratch, then compare it against standard baselines.
+
+---
+
+## The LeWorldModel Algorithm
+
+**Paper:** *LeWorldModel: Stable End-to-End Joint-Embedding Predictive Architecture from Pixels*
+(Maes, Le Lidec, Scieur, LeCun, Balestriero — arXiv:2603.19312)
+
+### Core Idea
+
+LeWM is a JEPA: instead of reconstructing pixels, it learns to predict future **latent embeddings**.
+The key challenge with JEPAs is representation collapse (encoder maps everything to the same vector).
+LeWM solves this with a single regularization term (SIGReg) that encourages embeddings to follow
+an isotropic Gaussian distribution — no stop-gradient, no EMA, no frozen encoders.
+
+### Architecture
+
+Two learned components (~15M params total, trains on a single GPU):
+
+**Encoder** (`enc_θ`) — ViT-tiny (~5M params)
+- Input: raw pixel frame `o_t` → Output: latent embedding `z_t`
+- Patch size 14, 12 layers, 3 attention heads, hidden dim 192
+- Uses the `[CLS]` token of the last layer, followed by a 1-layer MLP + BatchNorm projection
+- BatchNorm is required because the final ViT LayerNorm blocks the SIGReg gradient
+
+**Predictor** (`pred_φ`) — Transformer (~10M params)
+- Input: history of N latent embeddings + action `a_t` → Output: predicted next embedding `ẑ_{t+1}`
+- 6 layers, 16 attention heads, 10% dropout
+- Action conditioning via Adaptive Layer Normalization (AdaLN) at each layer, initialized to zero
+- Followed by the same 1-layer MLP + BatchNorm projector as the encoder
+- Uses causal masking (autoregressive, no peeking at future embeddings)
+
+### Training Objective
+
+```
+L_LeWM = L_pred + λ · SIGReg(Z)
+```
+
+**Prediction loss** (MSE, teacher-forcing):
+```
+L_pred = || ẑ_{t+1} - z_{t+1} ||²₂
+```
+The encoder is incentivized to produce embeddings that the predictor can track.
+
+**SIGReg** (anti-collapse regularizer):
+- Projects the batch of embeddings `Z ∈ R^{N×B×d}` onto M random unit-norm directions
+- Applies the Epps–Pulley univariate normality test to each 1D projection
+- Averages the test statistics across projections
+- By the Cramér–Wold theorem, matching all 1D marginals = matching the full joint Gaussian
+
+```
+SIGReg(Z) = (1/M) Σ_m T(Z u^(m))
+```
+
+Default hyperparameters: M=1024 projections, **λ=0.1** (the only hyperparameter that matters).
+λ can be tuned via bisection search (log complexity), unlike PLDM which has 6 hyperparameters.
+
+**No stop-gradient, no EMA, no auxiliary losses.** All gradients flow through all components.
+
+### Training Data
+
+Fully offline and reward-free: trajectories of `(o_{1:T}, a_{1:T})` raw pixel observations + actions.
+Data can come from any behavior policy (random, expert, or mixed) as long as it covers the dynamics.
+
+### Latent Planning (Inference)
+
+At test time, planning is done via **Model Predictive Control (MPC)** with the
+**Cross-Entropy Method (CEM)**:
+
+1. Encode current observation: `z_1 = enc_θ(o_1)`
+2. Encode goal observation: `z_g = enc_θ(o_g)`
+3. Sample candidate action sequences, roll out latent states autoregressively via the predictor
+4. Minimize terminal cost: `C(ẑ_H) = || ẑ_H - z_g ||²₂`
+5. CEM iteratively refines the action distribution using top-k plans
+6. Execute only the first K actions, then replan from the new observation
+
+Planning horizon H trades off lookahead quality vs. error accumulation.
+LeWM plans up to **48× faster** than foundation-model-based world models (DINO-WM).
+
+---
+
+## Project TODO
+
+Note: architectures will differ from the paper — LunarLander has different observation/action
+characteristics than the original paper's environments.
+
+- [ ] Stage 1 — Encoder
+- [ ] Stage 2 — Predictor
+- [ ] Stage 3 — SIGReg + full training loop
+- [ ] Stage 4 — Latent planning (CEM + MPC)
+- [ ] Stage 5 — Closed-loop action execution
+- [ ] Stage 6 — Baseline comparison
+
+---
+
+## Code Conventions
+
+- All imports at the top of the file, never inside functions
+- Two empty lines between functions
+- No empty lines inside functions
+- No comments unless the reason is non-obvious
+- Each function does exactly one thing; break down multi-purpose functions
+- Use as little code as possible — prefer built-ins and library calls over manual loops
+- Be precise and focused — no speculative abstractions
+- **Test after every stage** before moving to the next
