@@ -10,4 +10,12 @@ dependencies = [
     "opencv-python>=4.13.0.92",
     "pygame>=2.6.1",
     "stable-baselines3>=2.0.0",
+    "torch>=2.0.0",
+    "wandb>=0.27.0",
 ]
+
+[tool.uv]
+package = true
+
+[tool.setuptools.packages.find]
+include = ["lewm*"]

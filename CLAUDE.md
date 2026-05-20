@@ -87,23 +87,53 @@ LeWM plans up to **48× faster** than foundation-model-based world models (DINO-
 
 ---
 
+## LunarLander-v3 Environment
+
+**Observations** — 8-dimensional continuous vector:
+| Index | Quantity |
+|-------|----------|
+| 0 | x position |
+| 1 | y position |
+| 2 | x velocity |
+| 3 | y velocity |
+| 4 | angle |
+| 5 | angular velocity |
+| 6 | left leg contact (bool) |
+| 7 | right leg contact (bool) |
+
+**Actions** — depends on variant:
+- `LunarLander-v3` (discrete): 4 actions — do nothing, fire left engine, fire main engine, fire right engine
+- `LunarLanderContinuous-v3` (continuous): 2-dimensional vector — main engine throttle `[-1, 1]`, lateral engine throttle `[-1, 1]`
+
+**Reward:** shaped per step (proximity to landing pad, velocity, angle, leg contact) + ±100 on landing/crash.
+Episode ends on crash, successful landing, or leaving the viewport.
+
+---
+
 ## Project TODO
 
 Note: architectures will differ from the paper — LunarLander has different observation/action
 characteristics than the original paper's environments.
 
-- [ ] Stage 1 — Encoder
-- [ ] Stage 2 — Predictor
-- [ ] Stage 3 — SIGReg + full training loop
+- [x] Stage 1 — Encoder
+- [x] Stage 2 — Predictor
+- [x] Stage 3 — SIGReg + full training loop
 - [ ] Stage 4 — Latent planning (CEM + MPC)
 - [ ] Stage 5 — Closed-loop action execution
 - [ ] Stage 6 — Baseline comparison
 
 ---
 
+## Ablation Studies
+
+- [ ] Latent dimension size
+
+---
+
 ## Code Conventions
 
 - All imports at the top of the file, never inside functions
+- Maximum line length: 100 characters
 - Two empty lines between functions
 - No empty lines inside functions
 - No comments unless the reason is non-obvious
