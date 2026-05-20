@@ -105,8 +105,35 @@ LeWM plans up to **48× faster** than foundation-model-based world models (DINO-
 - `LunarLander-v3` (discrete): 4 actions — do nothing, fire left engine, fire main engine, fire right engine
 - `LunarLanderContinuous-v3` (continuous): 2-dimensional vector — main engine throttle `[-1, 1]`, lateral engine throttle `[-1, 1]`
 
-**Reward:** shaped per step (proximity to landing pad, velocity, angle, leg contact) + ±100 on landing/crash.
-Episode ends on crash, successful landing, or leaving the viewport.
+**Reward:** computed each step as a delta of a shaping function plus fuel penalties and terminal bonuses.
+
+Shaping function (computed from current state `s`):
+```
+shaping(s) = -100 * sqrt(x² + y²)        # penalize distance from landing pad
+           - 100 * sqrt(vx² + vy²)        # penalize speed
+           - 100 * |angle|                 # penalize tilt
+           + 10 * leg_left                 # reward ground contact
+           + 10 * leg_right
+```
+
+Step reward:
+```
+r_t = shaping(s_t) - shaping(s_{t-1})     # improvement in shaping
+    - 0.30 * main_engine_fired             # fuel cost
+    - 0.03 * side_engine_fired             # fuel cost
+```
+
+Terminal reward (replaces step reward on final step):
+- Crash or out of bounds: **-100**
+- Successful landing (lander comes to rest): **+100**
+
+**Key implication:** the step reward depends on *both* `s_{t-1}` and `s_t`, not just the current state.
+The reward predictor therefore needs `(prev_obs, obs, action)` as input.
+
+**Approximate value ranges:**
+- Typical step reward: `[-10, +5]`
+- Terminal: `±100`
+- Full episode total: typically `[-500, +300]` depending on policy quality
 
 ---
 

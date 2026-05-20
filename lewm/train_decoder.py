@@ -6,29 +6,19 @@ import gymnasium as gym
 import wandb
 import numpy as np
 from lewm.encoder import Encoder
-from lewm.predictor import Predictor
-from lewm.reward_predictor import RewardPredictor
+from lewm.decoder import Decoder
 from lewm.train_jepa import collect_data
-from lewm.utils import signed_log
 
 
-def make_batch(samples: list[tuple], device: torch.device) -> tuple:
-    prev_obs = torch.tensor(np.array([s[0] for s in samples]), dtype=torch.float32).to(device)
-    obs = torch.tensor(np.array([s[1] for s in samples]), dtype=torch.float32).to(device)
-    actions = torch.tensor([s[2] for s in samples], dtype=torch.long).to(device)
-    next_obs = torch.tensor(np.array([s[3] for s in samples]), dtype=torch.float32).to(device)
-    rewards = signed_log(torch.tensor([s[4] for s in samples], dtype=torch.float32)).to(device)
-    terminated = torch.tensor([s[5] for s in samples], dtype=torch.float32).to(device)
-    return prev_obs, obs, actions, next_obs, rewards, terminated
+def make_batch(samples: list[tuple], device: torch.device) -> torch.Tensor:
+    return torch.tensor(np.array([s[1] for s in samples]), dtype=torch.float32).to(device)
 
 
-def train_step(encoder, reward_predictor, optimizer, batch) -> float:
-    prev_obs, obs, actions, next_obs, rewards, terminated = batch
+def train_step(encoder, decoder, optimizer, obs) -> float:
     with torch.no_grad():
-        z_prev = encoder(obs)
-        z = encoder(next_obs)
-    r_hat = reward_predictor(z_prev, z, actions, terminated)
-    loss = F.mse_loss(r_hat, rewards)
+        z = encoder(obs)
+    obs_hat = decoder(z)
+    loss = F.mse_loss(obs_hat, obs)
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
@@ -43,12 +33,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     OBS_DIM = 8
-    ACTION_DIM = 4
     LATENT_DIM = 16
     N_COLLECT = 10_000
     BATCH_SIZE = 256
     LR = 3e-4
-    N_EPOCHS = 500
+    N_EPOCHS = 100
     SAVE_EVERY = 500
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -65,8 +54,8 @@ if __name__ == "__main__":
     encoder.load_state_dict(ckpt["encoder"])
     encoder.eval()
 
-    reward_predictor = RewardPredictor(LATENT_DIM, ACTION_DIM).to(device)
-    optimizer = torch.optim.Adam(reward_predictor.parameters(), lr=LR)
+    decoder = Decoder(LATENT_DIM, OBS_DIM).to(device)
+    optimizer = torch.optim.Adam(decoder.parameters(), lr=LR)
 
     env = gym.make("LunarLander-v3")
     print(f"collecting {N_COLLECT} steps...")
@@ -78,14 +67,14 @@ if __name__ == "__main__":
         random.shuffle(data)
         for i in range(0, len(data) - BATCH_SIZE, BATCH_SIZE):
             batch = make_batch(data[i:i + BATCH_SIZE], device)
-            loss = train_step(encoder, reward_predictor, optimizer, batch)
+            loss = train_step(encoder, decoder, optimizer, batch)
             step += 1
-            print(f"\re{epoch:3d} s{step:5d} | rew {loss:.4f}", end="")
-            wandb.log({"reward_loss": loss}, step=step)
+            print(f"\re{epoch:3d} s{step:5d} | dec {loss:.4f}", end="")
+            wandb.log({"decoder_loss": loss}, step=step)
             if not args.nosave and step % SAVE_EVERY == 0:
-                torch.save(reward_predictor.state_dict(), f"data/reward_ckpt_{step}.pt")
+                torch.save(decoder.state_dict(), f"data/decoder_ckpt_{step}.pt")
 
     if not args.nosave:
-        torch.save(reward_predictor.state_dict(), "data/reward_predictor_final.pt")
+        torch.save(decoder.state_dict(), "data/decoder_final.pt")
     print("\ndone.")
     wandb.finish()

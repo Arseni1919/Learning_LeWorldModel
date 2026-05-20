@@ -7,6 +7,7 @@ import wandb
 import numpy as np
 from lewm.encoder import Encoder
 from lewm.predictor import Predictor
+from lewm.sigreg import SIGReg
 
 
 def collect_data(env, n_steps: int) -> list[tuple]:
@@ -25,15 +26,6 @@ def collect_data(env, n_steps: int) -> list[tuple]:
     return data
 
 
-def sigreg(Z: torch.Tensor, M: int = 256) -> torch.Tensor:
-    B, d = Z.shape
-    u = F.normalize(torch.randn(d, M, device=Z.device), dim=0)
-    H = (Z @ u).T  # (M, B)
-    diff_sq = (H.unsqueeze(1) - H.unsqueeze(2)) ** 2  # (M, B, B)
-    term1 = torch.exp(-diff_sq / 2).mean(dim=(1, 2))
-    term2 = torch.exp(-H ** 2 / 4).mean(dim=1)
-    return (term1 - 2 ** 0.5 * term2).mean()
-
 
 def make_batch(samples: list[tuple], device: torch.device) -> tuple:
     prev_obs = torch.tensor(np.array([s[0] for s in samples]), dtype=torch.float32).to(device)
@@ -45,19 +37,23 @@ def make_batch(samples: list[tuple], device: torch.device) -> tuple:
     return prev_obs, obs, actions, next_obs, rewards, terminated
 
 
-def train_step(encoder, predictor, optimizer, batch, lam: float) -> tuple:
-    _, obs, actions, next_obs, _, _ = batch
+def latent_stats(z: torch.Tensor) -> tuple:
+    var = z.detach().var(dim=0)
+    return var.mean().item(), (var < 0.01).sum().item()
+
+
+def train_step(encoder, predictor, sigreg, optimizer, batch, lam: float) -> tuple:
+    prev_obs, obs, actions, next_obs, _, _ = batch
     z = encoder(obs)
     z_next = encoder(next_obs)
     z_hat_next = predictor(z, actions)
     pred_loss = F.mse_loss(z_hat_next, z_next)
-    reg_loss = sigreg(z)
+    reg_loss = sigreg(torch.stack([z, z_next]))
     loss = pred_loss + lam * reg_loss
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
-    return loss.item(), pred_loss.item(), reg_loss.item()
-
+    return loss.item(), pred_loss.item(), reg_loss.item(), *latent_stats(z)
 
 
 if __name__ == "__main__":
@@ -72,8 +68,8 @@ if __name__ == "__main__":
     N_COLLECT = 10_000
     BATCH_SIZE = 256
     LR = 3e-4
-    LAMBDA = 0.1
-    N_EPOCHS = 50
+    LAMBDA = 1.0
+    N_EPOCHS = 100
     SAVE_EVERY = 500
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -89,6 +85,7 @@ if __name__ == "__main__":
     env = gym.make("LunarLander-v3")
     encoder = Encoder(OBS_DIM, LATENT_DIM).to(device)
     predictor = Predictor(LATENT_DIM, ACTION_DIM).to(device)
+    sigreg = SIGReg().to(device)
     optimizer = torch.optim.Adam(
         list(encoder.parameters()) + list(predictor.parameters()), lr=LR
     )
@@ -102,13 +99,16 @@ if __name__ == "__main__":
         random.shuffle(data)
         for i in range(0, len(data) - BATCH_SIZE, BATCH_SIZE):
             batch = make_batch(data[i:i + BATCH_SIZE], device)
-            loss, pred_loss, reg_loss = train_step(encoder, predictor, optimizer, batch, LAMBDA)
+            loss, pred_loss, reg_loss, mean_var, dead_dims = train_step(
+                encoder, predictor, sigreg, optimizer, batch, LAMBDA)
             step += 1
             msg = (f"e{epoch:3d} s{step:5d} | loss {loss:.4f}"
-                   f" | pred {pred_loss:.4f} | sig {reg_loss:.4f}")
+                   f" | pred {pred_loss:.4f} | sig {reg_loss:.4f}"
+                   f" | var {mean_var:.3f} | dead {dead_dims}")
             print(f'\r{msg}', end="")
             wandb.log({
                 "loss": loss, "pred_loss": pred_loss, "sigreg_loss": reg_loss,
+                "latent_mean_var": mean_var, "latent_dead_dims": dead_dims,
             }, step=step)
             if not args.nosave and step % SAVE_EVERY == 0 and step > 1000:
                 ckpt = {"encoder": encoder.state_dict(), "predictor": predictor.state_dict()}

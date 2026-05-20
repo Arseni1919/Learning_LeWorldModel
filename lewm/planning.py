@@ -11,14 +11,12 @@ def cem(obs: torch.Tensor, encoder, predictor, reward_predictor,
     ACTION_DIM = 4
     z0 = encoder(obs.unsqueeze(0)).expand(N, -1)
     actions = torch.randint(0, ACTION_DIM, (N, H), device=device)
-    z_prev = z0.clone()
     z = z0.clone()
     scores = torch.zeros(N, device=device)
     terminated = torch.zeros(N, device=device)
     for h in range(H):
         z_next = predictor(z, actions[:, h])
-        scores += reward_predictor(z_prev, z_next, actions[:, h], terminated)
-        z_prev = z
+        scores += reward_predictor(z, z_next, actions[:, h], terminated)
         z = z_next
     return actions[scores.argmax(), 0].item()
 
@@ -54,7 +52,7 @@ if __name__ == "__main__":
         while not (terminated or truncated):
             obs_tensor = torch.tensor(obs, dtype=torch.float32).to(device)
             with torch.no_grad():
-                action = cem(obs_tensor, encoder, predictor, reward_predictor)
+                action = cem(obs_tensor, encoder, predictor, reward_predictor, 100, 100)
             obs, reward, terminated, truncated, _ = env.step(action)
             total_reward += reward
         all_rewards.append(total_reward)

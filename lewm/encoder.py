@@ -25,10 +25,10 @@ if __name__ == "__main__":
     encoder = Encoder(obs_dim, latent_dim)
     encoder.eval()
 
-    obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
+    obs_t = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
     with torch.no_grad():
-        z = encoder(obs_tensor)
+        z = encoder(obs_t)
 
-    print(f"obs shape:     {obs_tensor.shape}")
+    print(f"obs shape:     {obs_t.shape}")
     print(f"latent shape:  {z.shape}")
     print(f"latent vector: {z}")

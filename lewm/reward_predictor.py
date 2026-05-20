@@ -33,18 +33,18 @@ if __name__ == "__main__":
     encoder.eval()
     reward_predictor.eval()
 
-    prev_obs, _ = env.reset()
+    obs, _ = env.reset()
     action = env.action_space.sample()
-    obs, _, terminated, _, _ = env.step(action)
+    next_obs, _, terminated, _, _ = env.step(action)
 
-    prev_obs_t = torch.tensor(prev_obs, dtype=torch.float32).unsqueeze(0)
     obs_t = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
+    next_obs_t = torch.tensor(next_obs, dtype=torch.float32).unsqueeze(0)
     action_t = torch.tensor([action])
     terminated_t = torch.tensor([float(terminated)])
 
     with torch.no_grad():
-        z_prev = encoder(prev_obs_t)
-        z = encoder(obs_t)
+        z_prev = encoder(obs_t)
+        z = encoder(next_obs_t)
         r_hat = reward_predictor(z_prev, z, action_t, terminated_t)
 
     print(f"z_prev shape:      {z_prev.shape}")
