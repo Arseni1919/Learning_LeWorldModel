@@ -145,7 +145,7 @@ characteristics than the original paper's environments.
 - [x] Stage 1 — Encoder
 - [x] Stage 2 — Predictor
 - [x] Stage 3 — SIGReg + full training loop
-- [ ] Stage 4 — Latent planning (CEM + MPC)
+- [x] Stage 4 — Latent planning (CEM + MPC)
 - [ ] Stage 5 — Closed-loop action execution
 - [ ] Stage 6 — Baseline comparison
 

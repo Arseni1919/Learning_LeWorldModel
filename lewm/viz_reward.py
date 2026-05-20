@@ -11,7 +11,7 @@ from lewm.utils import signed_log
 OBS_DIM = 8
 LATENT_DIM = 16
 ACTION_DIM = 4
-N_EPISODES = 200
+N_EPISODES = 1000
 BOUNDS = (-2.5, 2.5)
 
 device = torch.device("cpu")

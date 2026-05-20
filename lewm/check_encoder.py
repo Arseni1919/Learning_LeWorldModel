@@ -2,7 +2,7 @@ import torch
 import gymnasium as gym
 import numpy as np
 from lewm.encoder import Encoder
-from lewm.train_jepa import collect_data
+from lewm.utils import collect_data
 
 
 OBS_DIM = 8

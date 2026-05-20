@@ -8,7 +8,7 @@ import numpy as np
 from lewm.encoder import Encoder
 from lewm.predictor import Predictor
 from lewm.reward_predictor import RewardPredictor
-from lewm.train_jepa import collect_data
+from lewm.utils import collect_data
 from lewm.utils import signed_log
 
 
@@ -33,6 +33,16 @@ def train_step(encoder, reward_predictor, optimizer, batch) -> float:
     loss.backward()
     optimizer.step()
     return loss.item()
+
+
+def train_epoch(encoder, reward_predictor, optimizer, data, device,
+                batch_size: int) -> float:
+    random.shuffle(data)
+    losses = []
+    for i in range(0, len(data) - batch_size, batch_size):
+        batch = make_batch(data[i:i + batch_size], device)
+        losses.append(train_step(encoder, reward_predictor, optimizer, batch))
+    return sum(losses) / len(losses)
 
 
 if __name__ == "__main__":

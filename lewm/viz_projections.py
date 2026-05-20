@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import gymnasium as gym
 from lewm.encoder import Encoder
-from lewm.train_jepa import collect_data
+from lewm.utils import collect_data
 
 
 OBS_DIM = 8
@@ -39,4 +39,4 @@ for i, ax in enumerate(axes.flat):
 
 plt.tight_layout()
 plt.show()
-input("Press Enter to exit...")
+

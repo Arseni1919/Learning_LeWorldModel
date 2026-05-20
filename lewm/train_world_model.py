@@ -8,23 +8,7 @@ import numpy as np
 from lewm.encoder import Encoder
 from lewm.predictor import Predictor
 from lewm.sigreg import SIGReg
-
-
-def collect_data(env, n_steps: int) -> list[tuple]:
-    data = []
-    obs, _ = env.reset()
-    prev_obs = obs.copy()
-    for _ in range(n_steps):
-        action = env.action_space.sample()
-        next_obs, reward, terminated, truncated, _ = env.step(action)
-        data.append((prev_obs.copy(), obs.copy(), action, next_obs.copy(), reward, terminated))
-        prev_obs = obs
-        obs = next_obs
-        if terminated or truncated:
-            obs, _ = env.reset()
-            prev_obs = obs.copy()
-    return data
-
+from lewm.utils import collect_data
 
 
 def make_batch(samples: list[tuple], device: torch.device) -> tuple:
@@ -54,6 +38,28 @@ def train_step(encoder, predictor, sigreg, optimizer, batch, lam: float) -> tupl
     loss.backward()
     optimizer.step()
     return loss.item(), pred_loss.item(), reg_loss.item(), *latent_stats(z)
+
+
+def train_epoch(encoder, predictor, sigreg, optimizer, data, device,
+                batch_size: int, lam: float) -> dict:
+    random.shuffle(data)
+    losses, pred_losses, reg_losses, vars_, deads = [], [], [], [], []
+    for i in range(0, len(data) - batch_size, batch_size):
+        batch = make_batch(data[i:i + batch_size], device)
+        loss, pred_loss, reg_loss, mean_var, dead_dims = train_step(
+            encoder, predictor, sigreg, optimizer, batch, lam)
+        losses.append(loss)
+        pred_losses.append(pred_loss)
+        reg_losses.append(reg_loss)
+        vars_.append(mean_var)
+        deads.append(dead_dims)
+    return {
+        "loss": sum(losses) / len(losses),
+        "pred_loss": sum(pred_losses) / len(pred_losses),
+        "reg_loss": sum(reg_losses) / len(reg_losses),
+        "mean_var": sum(vars_) / len(vars_),
+        "dead_dims": sum(deads) / len(deads),
+    }
 
 
 if __name__ == "__main__":

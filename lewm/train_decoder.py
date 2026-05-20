@@ -7,7 +7,7 @@ import wandb
 import numpy as np
 from lewm.encoder import Encoder
 from lewm.decoder import Decoder
-from lewm.train_jepa import collect_data
+from lewm.utils import collect_data
 
 
 def make_batch(samples: list[tuple], device: torch.device) -> torch.Tensor:
