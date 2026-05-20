@@ -1,39 +1,63 @@
+import argparse
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import gymnasium as gym
 from lewm.encoder import Encoder
+from lewm.predictor import Predictor
 from lewm.reward_predictor import RewardPredictor
+from lewm.planning import cem, a_star
 from lewm.utils import signed_log
+from tqdm import tqdm
 
 
 OBS_DIM = 8
 LATENT_DIM = 16
 ACTION_DIM = 4
-N_EPISODES = 1000
+N_STEPS = 1000
 BOUNDS = (-2.5, 2.5)
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--planner", choices=["random", "cem", "a_star"], default="a_star")
+args = parser.parse_args()
 
 device = torch.device("cpu")
 
 encoder = Encoder(OBS_DIM, LATENT_DIM)
+predictor = Predictor(LATENT_DIM, ACTION_DIM)
 reward_predictor = RewardPredictor(LATENT_DIM, ACTION_DIM)
 ckpt = torch.load("data/checkpoint_final.pt", map_location=device)
 encoder.load_state_dict(ckpt["encoder"])
+predictor.load_state_dict(ckpt["predictor"])
 reward_predictor.load_state_dict(
     torch.load("data/reward_predictor_final.pt", map_location=device)
 )
 encoder.eval()
+predictor.eval()
 reward_predictor.eval()
+
+env = gym.make("LunarLander-v3")
+
+if args.planner == "cem":
+    def get_action(obs):
+        with torch.no_grad():
+            return cem(torch.tensor(obs, dtype=torch.float32), encoder, predictor, reward_predictor)
+elif args.planner == "a_star":
+    def get_action(obs):
+        with torch.no_grad():
+            return a_star(torch.tensor(obs, dtype=torch.float32), encoder, predictor, reward_predictor)
+else:
+    get_action = lambda obs: env.action_space.sample()
 
 xs, ys, real_rewards, pred_rewards = [], [], [], []
 
-env = gym.make("LunarLander-v3")
-for _ in range(N_EPISODES):
+while len(xs) < N_STEPS:
     obs, _ = env.reset()
     terminated = truncated = False
     while not (terminated or truncated):
-        action = env.action_space.sample()
+        print(f"\rstep {len(xs):4d} | obs: {obs[:]} | reward: {real_rewards[-1] if real_rewards else 0:.3f} | pred: {pred_rewards[-1] if pred_rewards else 0:.3f}", end="")
+        action = get_action(obs)
         next_obs, reward, terminated, truncated, _ = env.step(action)
         obs_t = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
         next_obs_t = torch.tensor(next_obs, dtype=torch.float32).unsqueeze(0)
@@ -48,14 +72,13 @@ for _ in range(N_EPISODES):
         real_rewards.append(reward)
         pred_rewards.append(pred)
         obs = next_obs
+        if len(xs) >= N_STEPS:
+            break
 
 xs = np.array(xs)
 ys = np.array(ys)
 real_rewards = np.array(real_rewards)
 pred_rewards = np.array(pred_rewards)
-
-def signed_log(r):
-    return np.sign(r) * np.log1p(np.abs(r))
 
 print(f"real  | mean: {real_rewards.mean():.3f}  std: {real_rewards.std():.3f}  "
       f"min: {real_rewards.min():.3f}  max: {real_rewards.max():.3f}")

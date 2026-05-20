@@ -146,8 +146,13 @@ characteristics than the original paper's environments.
 - [x] Stage 2 — Predictor
 - [x] Stage 3 — SIGReg + full training loop
 - [x] Stage 4 — Latent planning (CEM + MPC)
-- [ ] Stage 5 — Closed-loop action execution
-- [ ] Stage 6 — Baseline comparison
+- [ ] Incorporate reward model into the world
+- [ ] Closed-loop action execution:
+        while True:
+            data = collect(pi)
+            wm = learnWM(data)
+            pi = learnPolicy(wm)
+- [ ] Baseline comparison
 
 ---
 

@@ -1,4 +1,6 @@
 import time
+import heapq
+import argparse
 import torch
 import gymnasium as gym
 from tqdm import tqdm
@@ -35,6 +37,36 @@ def cem(obs: torch.Tensor, encoder, predictor, reward_predictor,
     return actions[scores.argmax(), 0].item()
 
 
+def a_star(obs: torch.Tensor, encoder, predictor, reward_predictor,
+           action_dim: int = 4, max_nodes: int = 200) -> int:
+    device = obs.device
+    z0 = encoder(obs.unsqueeze(0)).squeeze(0)
+    terminated = torch.zeros(1, device=device)
+    heap = []
+    counter = 0
+    for a in range(action_dim):
+        action_t = torch.tensor([a], device=device)
+        z_next = predictor(z0.unsqueeze(0), action_t).squeeze(0)
+        r = reward_predictor(z0.unsqueeze(0), z_next.unsqueeze(0), action_t, terminated).item()
+        heapq.heappush(heap, (-r, counter, z_next, a))
+        counter += 1
+    best_g, best_first = float("-inf"), 0
+    for _ in range(max_nodes):
+        if not heap:
+            break
+        neg_g, _, z, first_action = heapq.heappop(heap)
+        g = -neg_g
+        if g > best_g:
+            best_g, best_first = g, first_action
+        for a in range(action_dim):
+            action_t = torch.tensor([a], device=device)
+            z_next = predictor(z.unsqueeze(0), action_t).squeeze(0)
+            r = reward_predictor(z.unsqueeze(0), z_next.unsqueeze(0), action_t, terminated).item()
+            heapq.heappush(heap, (-(g + r), counter, z_next, first_action))
+            counter += 1
+    return best_first
+
+
 def demo(encoder, predictor, reward_predictor, device):
     env = gym.make("LunarLander-v3", render_mode="human")
     obs, _ = env.reset()
@@ -68,6 +100,10 @@ def evaluate(env, encoder, predictor, reward_predictor, n_episodes: int, device)
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--planner", choices=["cem", "a_star"], default="a_star")
+    args = parser.parse_args()
+
     OBS_DIM = 8
     ACTION_DIM = 4
     LATENT_DIM = 16
@@ -88,6 +124,9 @@ if __name__ == "__main__":
     )
     reward_predictor.eval()
 
+    planner = cem if args.planner == "cem" else a_star
+    print(f"planner: {args.planner}")
+
     N_RUNS = 10
     env = gym.make("LunarLander-v3", render_mode="human")
     all_rewards = []
@@ -98,7 +137,7 @@ if __name__ == "__main__":
         while not (terminated or truncated):
             obs_tensor = torch.tensor(obs, dtype=torch.float32).to(device)
             with torch.no_grad():
-                action = cem(obs_tensor, encoder, predictor, reward_predictor, 100, 100)
+                action = planner(obs_tensor, encoder, predictor, reward_predictor)
             obs, reward, terminated, truncated, _ = env.step(action)
             total_reward += reward
         all_rewards.append(total_reward)
