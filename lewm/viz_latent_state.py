@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import gymnasium as gym
 from lewm.encoder import Encoder
 from lewm.decoder import Decoder
+from lewm.utils import signed_log
 
 
 OBS_DIM = 8
@@ -13,7 +14,7 @@ BOUNDS = (-2.5, 2.5)
 
 device = torch.device("cpu")
 
-encoder = Encoder(OBS_DIM, LATENT_DIM)
+encoder = Encoder(OBS_DIM * 2 + 1, LATENT_DIM)
 decoder = Decoder(LATENT_DIM, OBS_DIM)
 ckpt = torch.load("data/checkpoint_final.pt", map_location=device)
 encoder.load_state_dict(ckpt["encoder"])
@@ -40,14 +41,20 @@ def plot_state(ax, x, y, vx, vy, title):
 
 env = gym.make("LunarLander-v3")
 obs, _ = env.reset()
+prev_obs = obs.copy()
+prev_reward_log = 0.0
 
 fig, (ax_real, ax_latent) = plt.subplots(1, 2, figsize=(12, 5))
 plt.ion()
 
 while True:
+    prev_obs_t = torch.tensor(prev_obs, dtype=torch.float32).unsqueeze(0)
     obs_t = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
+    prev_r_t = torch.tensor([[prev_reward_log]], dtype=torch.float32)
+    enc_in = torch.cat([prev_obs_t, obs_t, prev_r_t], dim=-1)
     with torch.no_grad():
-        obs_hat = decoder(encoder(obs_t)).squeeze().numpy()
+        out = decoder(encoder(enc_in)).squeeze().numpy()
+    obs_hat = out[:OBS_DIM]
 
     plot_state(ax_real, obs[0], obs[1], obs[2], obs[3], "Real observation")
     plot_state(ax_latent, obs_hat[0], obs_hat[1], obs_hat[2], obs_hat[3], "Decoded latent")
@@ -58,7 +65,11 @@ while True:
 
     input("Press Enter for next step...")
 
-    obs, _, terminated, truncated, _ = env.step(env.action_space.sample())
+    prev_obs = obs.copy()
+    obs, reward, terminated, truncated, _ = env.step(env.action_space.sample())
+    prev_reward_log = signed_log(reward)
 
     if terminated or truncated:
         obs, _ = env.reset()
+        prev_obs = obs.copy()
+        prev_reward_log = 0.0

@@ -8,17 +8,17 @@ import numpy as np
 from lewm.encoder import Encoder
 from lewm.predictor import Predictor
 from lewm.sigreg import SIGReg
-from lewm.utils import collect_data
+from lewm.utils import collect_data, signed_log
 
 
 def make_batch(samples: list[tuple], device: torch.device) -> tuple:
     prev_obs = torch.tensor(np.array([s[0] for s in samples]), dtype=torch.float32).to(device)
     obs = torch.tensor(np.array([s[1] for s in samples]), dtype=torch.float32).to(device)
-    actions = torch.tensor([s[2] for s in samples], dtype=torch.long).to(device)
-    next_obs = torch.tensor(np.array([s[3] for s in samples]), dtype=torch.float32).to(device)
-    rewards = torch.tensor([s[4] for s in samples], dtype=torch.float32).to(device) / 100.0
-    terminated = torch.tensor([s[5] for s in samples], dtype=torch.float32).to(device)
-    return prev_obs, obs, actions, next_obs, rewards, terminated
+    prev_r = signed_log(torch.tensor([s[2] for s in samples], dtype=torch.float32)).to(device)
+    actions = torch.tensor([s[3] for s in samples], dtype=torch.long).to(device)
+    next_obs = torch.tensor(np.array([s[4] for s in samples]), dtype=torch.float32).to(device)
+    next_r = signed_log(torch.tensor([s[5] for s in samples], dtype=torch.float32)).to(device)
+    return prev_obs, obs, prev_r, actions, next_obs, next_r
 
 
 def latent_stats(z: torch.Tensor) -> tuple:
@@ -27,15 +27,20 @@ def latent_stats(z: torch.Tensor) -> tuple:
 
 
 def train_step(encoder, predictor, sigreg, optimizer, batch, lam: float) -> tuple:
-    prev_obs, obs, actions, next_obs, _, _ = batch
-    z = encoder(obs)
-    z_next = encoder(next_obs)
+    prev_obs, obs, prev_r, actions, next_obs, next_r = batch
+    enc_in = torch.cat([prev_obs, obs, prev_r.unsqueeze(-1)], dim=-1)
+    enc_next_in = torch.cat([obs, next_obs, next_r.unsqueeze(-1)], dim=-1)
+    z = encoder(enc_in)
+    z_next = encoder(enc_next_in)
     z_hat_next = predictor(z, actions)
     pred_loss = F.mse_loss(z_hat_next, z_next)
     reg_loss = sigreg(torch.stack([z, z_next]))
     loss = pred_loss + lam * reg_loss
     optimizer.zero_grad()
     loss.backward()
+    torch.nn.utils.clip_grad_norm_(
+        list(encoder.parameters()) + list(predictor.parameters()), max_norm=1.0
+    )
     optimizer.step()
     return loss.item(), pred_loss.item(), reg_loss.item(), *latent_stats(z)
 
@@ -76,7 +81,7 @@ if __name__ == "__main__":
     LR = 3e-4
     LAMBDA = 1.0
     N_EPOCHS = 100
-    SAVE_EVERY = 500
+    SAVE_EVERY = 10
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"device: {device}")
@@ -89,7 +94,7 @@ if __name__ == "__main__":
     )
 
     env = gym.make("LunarLander-v3")
-    encoder = Encoder(OBS_DIM, LATENT_DIM).to(device)
+    encoder = Encoder(OBS_DIM * 2 + 1, LATENT_DIM).to(device)
     predictor = Predictor(LATENT_DIM, ACTION_DIM).to(device)
     sigreg = SIGReg().to(device)
     optimizer = torch.optim.Adam(
@@ -100,25 +105,20 @@ if __name__ == "__main__":
     data = collect_data(env, N_COLLECT)
     print(f"collected {len(data)} transitions")
 
-    step = 0
     for epoch in range(N_EPOCHS):
-        random.shuffle(data)
-        for i in range(0, len(data) - BATCH_SIZE, BATCH_SIZE):
-            batch = make_batch(data[i:i + BATCH_SIZE], device)
-            loss, pred_loss, reg_loss, mean_var, dead_dims = train_step(
-                encoder, predictor, sigreg, optimizer, batch, LAMBDA)
-            step += 1
-            msg = (f"e{epoch:3d} s{step:5d} | loss {loss:.4f}"
-                   f" | pred {pred_loss:.4f} | sig {reg_loss:.4f}"
-                   f" | var {mean_var:.3f} | dead {dead_dims}")
-            print(f'\r{msg}', end="")
-            wandb.log({
-                "loss": loss, "pred_loss": pred_loss, "sigreg_loss": reg_loss,
-                "latent_mean_var": mean_var, "latent_dead_dims": dead_dims,
-            }, step=step)
-            if not args.nosave and step % SAVE_EVERY == 0 and step > 1000:
-                ckpt = {"encoder": encoder.state_dict(), "predictor": predictor.state_dict()}
-                torch.save(ckpt, f"data/checkpoint_{step}.pt")
+        stats = train_epoch(encoder, predictor, sigreg, optimizer, data, device, BATCH_SIZE, LAMBDA)
+        msg = (f"e{epoch:3d} | loss {stats['loss']:.4f}"
+               f" | pred {stats['pred_loss']:.4f} | sig {stats['reg_loss']:.4f}"
+               f" | var {stats['mean_var']:.3f} | dead {stats['dead_dims']:.0f}")
+        print(f'\r{msg}', end="")
+        wandb.log({
+            "loss": stats["loss"], "pred_loss": stats["pred_loss"],
+            "sigreg_loss": stats["reg_loss"], "latent_mean_var": stats["mean_var"],
+            "latent_dead_dims": stats["dead_dims"],
+        }, step=epoch)
+        if not args.nosave and epoch % SAVE_EVERY == 0 and epoch > 0:
+            ckpt = {"encoder": encoder.state_dict(), "predictor": predictor.state_dict()}
+            torch.save(ckpt, f"data/checkpoint_{epoch}.pt")
 
     if not args.nosave:
         torch.save({

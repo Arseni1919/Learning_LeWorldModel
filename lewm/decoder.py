@@ -10,7 +10,7 @@ class Decoder(nn.Module):
         self.net = nn.Sequential(
             nn.Linear(latent_dim, 64),
             nn.ReLU(),
-            nn.Linear(64, obs_dim)
+            nn.Linear(64, obs_dim + 1)
         )
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
@@ -24,17 +24,18 @@ if __name__ == "__main__":
     env = gym.make("LunarLander-v3")
     obs, _ = env.reset()
 
-    encoder = Encoder(OBS_DIM, LATENT_DIM)
+    encoder = Encoder(OBS_DIM + 1, LATENT_DIM)
     decoder = Decoder(LATENT_DIM, OBS_DIM)
     encoder.eval()
     decoder.eval()
 
-    obs_t = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
+    enc_in = torch.cat([torch.tensor(obs, dtype=torch.float32), torch.tensor([0.0])]).unsqueeze(0)
     with torch.no_grad():
-        z = encoder(obs_t)
-        obs_hat = decoder(z)
+        z = encoder(enc_in)
+        out = decoder(z)
 
+    print(f"encoder input shape: {enc_in.shape}")
     print(f"latent shape:        {z.shape}")
-    print(f"reconstructed shape: {obs_hat.shape}")
-    print(f"original obs:        {obs_t.squeeze().numpy()}")
-    print(f"reconstructed obs:   {obs_hat.squeeze().numpy()}")
+    print(f"decoder output shape:{out.shape}  (obs_dim + 1 = {OBS_DIM + 1})")
+    print(f"obs_hat:             {out.squeeze()[:OBS_DIM].numpy()}")
+    print(f"reward_log_hat:      {out.squeeze()[-1].item():.4f}")

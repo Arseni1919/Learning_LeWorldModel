@@ -7,22 +7,37 @@ import wandb
 import numpy as np
 from lewm.encoder import Encoder
 from lewm.decoder import Decoder
-from lewm.utils import collect_data
+from lewm.utils import collect_data, signed_log
 
 
-def make_batch(samples: list[tuple], device: torch.device) -> torch.Tensor:
-    return torch.tensor(np.array([s[1] for s in samples]), dtype=torch.float32).to(device)
+def make_batch(samples: list[tuple], device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
+    prev_obs = torch.tensor(np.array([s[0] for s in samples]), dtype=torch.float32).to(device)
+    obs = torch.tensor(np.array([s[1] for s in samples]), dtype=torch.float32).to(device)
+    prev_r = signed_log(torch.tensor([s[2] for s in samples], dtype=torch.float32)).to(device)
+    enc_in = torch.cat([prev_obs, obs, prev_r.unsqueeze(-1)], dim=-1)
+    dec_target = torch.cat([obs, prev_r.unsqueeze(-1)], dim=-1)
+    return enc_in, dec_target
 
 
-def train_step(encoder, decoder, optimizer, obs) -> float:
+def train_step(encoder, decoder, optimizer,
+               enc_in: torch.Tensor, dec_target: torch.Tensor) -> float:
     with torch.no_grad():
-        z = encoder(obs)
-    obs_hat = decoder(z)
-    loss = F.mse_loss(obs_hat, obs)
+        z = encoder(enc_in)
+    out = decoder(z)
+    loss = F.mse_loss(out, dec_target)
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
     return loss.item()
+
+
+def train_epoch(encoder, decoder, optimizer, data, device, batch_size: int) -> float:
+    random.shuffle(data)
+    losses = []
+    for i in range(0, len(data) - batch_size, batch_size):
+        enc_in, dec_target = make_batch(data[i:i + batch_size], device)
+        losses.append(train_step(encoder, decoder, optimizer, enc_in, dec_target))
+    return sum(losses) / len(losses)
 
 
 if __name__ == "__main__":
@@ -34,11 +49,11 @@ if __name__ == "__main__":
 
     OBS_DIM = 8
     LATENT_DIM = 16
-    N_COLLECT = 10_000
+    N_COLLECT = 100_000
     BATCH_SIZE = 256
-    LR = 3e-4
-    N_EPOCHS = 100
-    SAVE_EVERY = 500
+    LR = 1e-4
+    N_EPOCHS = 400
+    SAVE_EVERY = 10
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"device: {device}")
@@ -50,7 +65,7 @@ if __name__ == "__main__":
     )
 
     ckpt = torch.load(args.checkpoint, map_location=device)
-    encoder = Encoder(OBS_DIM, LATENT_DIM).to(device)
+    encoder = Encoder(OBS_DIM * 2 + 1, LATENT_DIM).to(device)
     encoder.load_state_dict(ckpt["encoder"])
     encoder.eval()
 
@@ -62,17 +77,12 @@ if __name__ == "__main__":
     data = collect_data(env, N_COLLECT)
     print(f"collected {len(data)} transitions")
 
-    step = 0
     for epoch in range(N_EPOCHS):
-        random.shuffle(data)
-        for i in range(0, len(data) - BATCH_SIZE, BATCH_SIZE):
-            batch = make_batch(data[i:i + BATCH_SIZE], device)
-            loss = train_step(encoder, decoder, optimizer, batch)
-            step += 1
-            print(f"\re{epoch:3d} s{step:5d} | dec {loss:.4f}", end="")
-            wandb.log({"decoder_loss": loss}, step=step)
-            if not args.nosave and step % SAVE_EVERY == 0:
-                torch.save(decoder.state_dict(), f"data/decoder_ckpt_{step}.pt")
+        loss = train_epoch(encoder, decoder, optimizer, data, device, BATCH_SIZE)
+        print(f"\re{epoch:3d} | dec {loss:.4f}", end="")
+        wandb.log({"decoder_loss": loss}, step=epoch)
+        if not args.nosave and epoch % SAVE_EVERY == 0 and epoch > 0:
+            torch.save(decoder.state_dict(), f"data/decoder_ckpt_{epoch}.pt")
 
     if not args.nosave:
         torch.save(decoder.state_dict(), "data/decoder_final.pt")

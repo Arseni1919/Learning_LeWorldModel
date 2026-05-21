@@ -146,8 +146,9 @@ characteristics than the original paper's environments.
 - [x] Stage 2 — Predictor
 - [x] Stage 3 — SIGReg + full training loop
 - [x] Stage 4 — Latent planning (CEM + MPC)
-- [ ] Incorporate reward model into the world
+- [x] Incorporate reward model into the world (encoder input = [obs, signed_log(reward)]; decoder output = [obs, reward_log])
 - [ ] Closed-loop action execution:
+        init world model NNs, and policy pi
         while True:
             data = collect(pi)
             wm = learnWM(data)
@@ -159,6 +160,12 @@ characteristics than the original paper's environments.
 ## Ablation Studies
 
 - [ ] Latent dimension size
+
+---
+
+## Running Python Files
+
+Use `uv run python3` to run Python files, e.g. `uv run python3 -m lewm.train_world_model`
 
 ---
 

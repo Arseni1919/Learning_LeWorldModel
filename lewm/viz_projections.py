@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import gymnasium as gym
 from lewm.encoder import Encoder
-from lewm.utils import collect_data
+from lewm.utils import collect_data, signed_log
 
 
 OBS_DIM = 8
@@ -12,7 +12,7 @@ N_SAMPLES = 2000
 M = 10
 
 device = torch.device("cpu")
-encoder = Encoder(OBS_DIM, LATENT_DIM)
+encoder = Encoder(OBS_DIM * 2 + 1, LATENT_DIM)
 ckpt = torch.load("data/checkpoint_final.pt", map_location=device)
 encoder.load_state_dict(ckpt["encoder"])
 encoder.eval()
@@ -20,10 +20,13 @@ encoder.eval()
 env = gym.make("LunarLander-v3")
 data = collect_data(env, N_SAMPLES)
 
+prev_obs = torch.tensor(np.array([s[0] for s in data]), dtype=torch.float32)
 obs = torch.tensor(np.array([s[1] for s in data]), dtype=torch.float32)
+prev_r = signed_log(torch.tensor([s[2] for s in data], dtype=torch.float32)).unsqueeze(-1)
+enc_in = torch.cat([prev_obs, obs, prev_r], dim=-1)
 
 with torch.no_grad():
-    Z = encoder(obs)
+    Z = encoder(enc_in)
 
 torch.manual_seed(0)
 U = torch.nn.functional.normalize(torch.randn(LATENT_DIM, M), dim=0)
