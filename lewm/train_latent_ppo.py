@@ -7,11 +7,7 @@ from lewm.encoder import Encoder
 from lewm.decoder import Decoder
 from lewm.predictor import Predictor
 from lewm.utils import signed_log, signed_exp
-
-
-OBS_DIM = 8
-ACTION_DIM = 4
-LATENT_DIM = 16
+from lewm.params import OBS_DIM, ACTION_DIM, LATENT_DIM
 
 
 def make_enc_in(prev_obs: np.ndarray, obs: np.ndarray, prev_reward_log: float) -> torch.Tensor:

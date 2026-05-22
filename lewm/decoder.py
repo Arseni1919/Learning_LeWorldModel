@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import gymnasium as gym
 from lewm.encoder import Encoder
+from lewm.params import OBS_DIM, LATENT_DIM
 
 
 class Decoder(nn.Module):
@@ -9,6 +10,8 @@ class Decoder(nn.Module):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(latent_dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, 64),
             nn.ReLU(),
             nn.Linear(64, obs_dim + 1)
         )
@@ -18,9 +21,6 @@ class Decoder(nn.Module):
 
 
 if __name__ == "__main__":
-    OBS_DIM = 8
-    LATENT_DIM = 16
-
     env = gym.make("LunarLander-v3")
     obs, _ = env.reset()
 

@@ -8,6 +8,7 @@ from lewm.encoder import Encoder
 from lewm.decoder import Decoder
 from lewm.predictor import Predictor
 from lewm.utils import signed_log
+from lewm.params import OBS_DIM, ACTION_DIM, LATENT_DIM
 
 
 def _enc_input(prev_obs: torch.Tensor, obs: torch.Tensor,
@@ -22,7 +23,6 @@ def cem(obs: torch.Tensor, encoder, predictor, decoder,
         H: int = 10, N: int = 100, n_iter: int = 5,
         elite_frac: float = 0.1, smoothing: float = 0.1) -> int:
     device = obs.device
-    ACTION_DIM = 4
     if prev_obs is None:
         prev_obs = torch.zeros_like(obs)
     enc_in = _enc_input(prev_obs.unsqueeze(0), obs.unsqueeze(0), prev_reward_log, device)
@@ -130,10 +130,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--planner", choices=["cem", "a_star"], default="a_star")
     args = parser.parse_args()
-
-    OBS_DIM = 8
-    ACTION_DIM = 4
-    LATENT_DIM = 16
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

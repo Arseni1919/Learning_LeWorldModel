@@ -3,11 +3,9 @@ import matplotlib.pyplot as plt
 import gymnasium as gym
 from lewm.encoder import Encoder
 from lewm.decoder import Decoder
-from lewm.utils import signed_log
+from lewm.utils import signed_log, signed_exp
+from lewm.params import OBS_DIM, LATENT_DIM
 
-
-OBS_DIM = 8
-LATENT_DIM = 16
 ARROW_SCALE = 0.2
 MAX_SPEED = 10.0
 BOUNDS = (-2.5, 2.5)
@@ -55,9 +53,13 @@ while True:
     with torch.no_grad():
         out = decoder(encoder(enc_in)).squeeze().numpy()
     obs_hat = out[:OBS_DIM]
+    real_reward = signed_exp(prev_reward_log)
+    pred_reward = signed_exp(out[-1])
 
-    plot_state(ax_real, obs[0], obs[1], obs[2], obs[3], "Real observation")
-    plot_state(ax_latent, obs_hat[0], obs_hat[1], obs_hat[2], obs_hat[3], "Decoded latent")
+    plot_state(ax_real, obs[0], obs[1], obs[2], obs[3],
+               f"Real observation  |  reward: {real_reward:.3f}")
+    plot_state(ax_latent, obs_hat[0], obs_hat[1], obs_hat[2], obs_hat[3],
+               f"Decoded latent  |  pred reward: {pred_reward:.3f}")
 
     plt.tight_layout()
     plt.draw()

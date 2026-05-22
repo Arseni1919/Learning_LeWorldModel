@@ -6,8 +6,7 @@ from lewm.encoder import Encoder
 from lewm.utils import collect_data, signed_log
 
 
-OBS_DIM = 8
-LATENT_DIM = 16
+from lewm.params import OBS_DIM, LATENT_DIM
 N_SAMPLES = 2000
 M = 10
 

@@ -147,12 +147,13 @@ characteristics than the original paper's environments.
 - [x] Stage 3 — SIGReg + full training loop
 - [x] Stage 4 — Latent planning (CEM + MPC)
 - [x] Incorporate reward model into the world (encoder input = [obs, signed_log(reward)]; decoder output = [obs, reward_log])
-- [ ] Closed-loop action execution:
+- [x] Closed-loop action execution:
         init world model NNs, and policy pi
         while True:
             data = collect(pi)
             wm = learnWM(data)
             pi = learnPolicy(wm)
+- [ ] to find the idea to use the learnt WM + Planning to solve any simple task that is easy to understand
 - [ ] Baseline comparison
 
 ---

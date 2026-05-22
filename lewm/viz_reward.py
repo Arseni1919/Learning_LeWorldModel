@@ -9,12 +9,8 @@ from lewm.decoder import Decoder
 from lewm.predictor import Predictor
 from lewm.planning import cem, a_star
 from lewm.utils import signed_log
+from lewm.params import OBS_DIM, ACTION_DIM, LATENT_DIM
 from tqdm import tqdm
-
-
-OBS_DIM = 8
-LATENT_DIM = 16
-ACTION_DIM = 4
 N_RUNS = 10
 BOUNDS = (-2.5, 2.5)
 

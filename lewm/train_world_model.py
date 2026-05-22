@@ -9,6 +9,7 @@ from lewm.encoder import Encoder
 from lewm.predictor import Predictor
 from lewm.sigreg import SIGReg
 from lewm.utils import collect_data, signed_log
+from lewm.params import OBS_DIM, ACTION_DIM, LATENT_DIM
 
 
 def make_batch(samples: list[tuple], device: torch.device) -> tuple:
@@ -73,14 +74,11 @@ if __name__ == "__main__":
     parser.add_argument("--nosave", action="store_true")
     args = parser.parse_args()
 
-    OBS_DIM = 8
-    ACTION_DIM = 4
-    LATENT_DIM = 16
-    N_COLLECT = 10_000
+    N_COLLECT = 1_000
     BATCH_SIZE = 256
-    LR = 3e-4
+    LR = 1e-4
     LAMBDA = 1.0
-    N_EPOCHS = 100
+    N_EPOCHS = 300
     SAVE_EVERY = 10
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

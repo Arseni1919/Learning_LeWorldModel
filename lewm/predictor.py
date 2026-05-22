@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import gymnasium as gym
 from lewm.encoder import Encoder
+from lewm.params import OBS_DIM, ACTION_DIM, LATENT_DIM
 
 
 class Predictor(nn.Module):
@@ -28,10 +29,6 @@ class Predictor(nn.Module):
 
 
 if __name__ == "__main__":
-    OBS_DIM = 8
-    ACTION_DIM = 4
-    LATENT_DIM = 16
-
     env = gym.make("LunarLander-v3")
     encoder = Encoder(OBS_DIM, LATENT_DIM)
     predictor = Predictor(LATENT_DIM, ACTION_DIM)

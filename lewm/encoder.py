@@ -10,6 +10,8 @@ class Encoder(nn.Module):
         self.net = nn.Sequential(
             nn.Linear(obs_dim, 64),
             nn.ReLU(),
+            nn.Linear(64, 64),
+            nn.ReLU(),
             nn.Linear(64, latent_dim)
         )
 

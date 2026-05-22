@@ -7,23 +7,28 @@ import wandb
 import numpy as np
 from lewm.encoder import Encoder
 from lewm.decoder import Decoder
+from lewm.predictor import Predictor
 from lewm.utils import collect_data, signed_log
+from lewm.params import OBS_DIM, ACTION_DIM, LATENT_DIM
 
 
-def make_batch(samples: list[tuple], device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
+def make_batch(samples: list[tuple], device: torch.device) -> tuple:
     prev_obs = torch.tensor(np.array([s[0] for s in samples]), dtype=torch.float32).to(device)
     obs = torch.tensor(np.array([s[1] for s in samples]), dtype=torch.float32).to(device)
     prev_r = signed_log(torch.tensor([s[2] for s in samples], dtype=torch.float32)).to(device)
+    actions = torch.tensor([s[3] for s in samples], dtype=torch.long).to(device)
+    next_obs = torch.tensor(np.array([s[4] for s in samples]), dtype=torch.float32).to(device)
+    next_r = signed_log(torch.tensor([s[5] for s in samples], dtype=torch.float32)).to(device)
     enc_in = torch.cat([prev_obs, obs, prev_r.unsqueeze(-1)], dim=-1)
-    dec_target = torch.cat([obs, prev_r.unsqueeze(-1)], dim=-1)
-    return enc_in, dec_target
+    dec_target = torch.cat([next_obs, next_r.unsqueeze(-1)], dim=-1)
+    return enc_in, actions, dec_target
 
 
-def train_step(encoder, decoder, optimizer,
-               enc_in: torch.Tensor, dec_target: torch.Tensor) -> float:
+def train_step(encoder, predictor, decoder, optimizer,
+               enc_in: torch.Tensor, actions: torch.Tensor, dec_target: torch.Tensor) -> float:
     with torch.no_grad():
-        z = encoder(enc_in)
-    out = decoder(z)
+        z_next = predictor(encoder(enc_in), actions)
+    out = decoder(z_next)
     loss = F.mse_loss(out, dec_target)
     optimizer.zero_grad()
     loss.backward()
@@ -31,12 +36,12 @@ def train_step(encoder, decoder, optimizer,
     return loss.item()
 
 
-def train_epoch(encoder, decoder, optimizer, data, device, batch_size: int) -> float:
+def train_epoch(encoder, predictor, decoder, optimizer, data, device, batch_size: int) -> float:
     random.shuffle(data)
     losses = []
     for i in range(0, len(data) - batch_size, batch_size):
-        enc_in, dec_target = make_batch(data[i:i + batch_size], device)
-        losses.append(train_step(encoder, decoder, optimizer, enc_in, dec_target))
+        enc_in, actions, dec_target = make_batch(data[i:i + batch_size], device)
+        losses.append(train_step(encoder, predictor, decoder, optimizer, enc_in, actions, dec_target))
     return sum(losses) / len(losses)
 
 
@@ -47,8 +52,6 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint", type=str, default="data/checkpoint_final.pt")
     args = parser.parse_args()
 
-    OBS_DIM = 8
-    LATENT_DIM = 16
     N_COLLECT = 100_000
     BATCH_SIZE = 256
     LR = 1e-4
@@ -69,6 +72,10 @@ if __name__ == "__main__":
     encoder.load_state_dict(ckpt["encoder"])
     encoder.eval()
 
+    predictor = Predictor(LATENT_DIM, ACTION_DIM).to(device)
+    predictor.load_state_dict(ckpt["predictor"])
+    predictor.eval()
+
     decoder = Decoder(LATENT_DIM, OBS_DIM).to(device)
     optimizer = torch.optim.Adam(decoder.parameters(), lr=LR)
 
@@ -78,7 +85,7 @@ if __name__ == "__main__":
     print(f"collected {len(data)} transitions")
 
     for epoch in range(N_EPOCHS):
-        loss = train_epoch(encoder, decoder, optimizer, data, device, BATCH_SIZE)
+        loss = train_epoch(encoder, predictor, decoder, optimizer, data, device, BATCH_SIZE)
         print(f"\re{epoch:3d} | dec {loss:.4f}", end="")
         wandb.log({"decoder_loss": loss}, step=epoch)
         if not args.nosave and epoch % SAVE_EVERY == 0 and epoch > 0:
