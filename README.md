@@ -31,6 +31,51 @@ inside a Model Predictive Control (MPC) loop.
 5. Closed-loop action execution
 6. Comparison with baseline algorithms (A2C, PPO)
 
+## lejepa — Representation Learning on Synthetic Shapes
+
+Before applying JEPA-style representation learning to a real environment, we first validate the
+approach on a simple synthetic dataset of 64×64 pixel images containing three shape types:
+**squares**, **circles**, and **equilateral triangles**. Each image has a randomly chosen
+foreground and background color (guaranteed to be visually distinct), a random position near
+the image center, and a randomly varying size — all fully within the image bounds.
+
+### Goal
+
+Train a convolutional encoder to produce a **64-dimensional latent vector** for each image such that:
+- Same-class images map to nearby embeddings (pulled together via MSE to the batch mean)
+- The latent space does not collapse (prevented by SIGReg)
+
+### Example images
+
+Each row shows 5 random samples of one shape type:
+
+![Shape samples](pics/lejepa_shapes.png)
+
+### Training setup
+
+- **Encoder:** 3 conv layers (3→6→12→24 channels, stride-2) + MLP head (24×8×8 → 128 → 64)
+- **Loss:** `MSE(Z, mean(Z)) + λ · SIGReg(Z)` where `λ = 0.1`
+- **Batch:** 64 same-class images per step; target is the mean embedding of the batch
+- **Optimizer:** Adam with cosine annealing LR schedule
+
+### Latent space projections
+
+After training, we project 500 embeddings per class onto 64 random unit-norm directions and
+compare each distribution to a standard Gaussian N(0,1) (black curve). A well-trained encoder
+should show roughly Gaussian projections, and class-specific clusters indicate the encoder has
+learned shape-discriminative features:
+
+![Latent projections](pics/lejepa_projections.png)
+
+### Open question
+
+**Why does `L_pred` not drop during training?** The MSE-to-mean loss encourages all embeddings
+within a batch to collapse toward their mean, but SIGReg pushes back to maintain spread. It is
+unclear whether the balance between these two forces is well-calibrated, or whether a different
+formulation of the contrastive signal is needed.
+
+---
+
 ## Setup
 
 ```bash
