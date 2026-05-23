@@ -1,5 +1,6 @@
 import argparse
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import wandb
 from lejepa.encoder import Encoder
@@ -31,12 +32,13 @@ def make_batches(data, batch_size, device):
         yield imgs, labels
 
 
-def accuracy(encoder, data, device):
+def accuracy(encoder, head, data, device):
     encoder.eval()
+    head.eval()
     with torch.no_grad():
         imgs = torch.stack([img for img, _ in data]).to(device)
         labels = torch.tensor([label for _, label in data], device=device)
-        return (encoder(imgs).argmax(dim=1) == labels).float().mean().item()
+        return (head(encoder(imgs)).argmax(dim=1) == labels).float().mean().item()
 
 
 if __name__ == "__main__":
@@ -60,28 +62,32 @@ if __name__ == "__main__":
     val_data = [data[i] for i in idx[:n_val]]
     train_data = [data[i] for i in idx[n_val:]]
 
-    encoder = Encoder(latent_dim=3).to(device)
-    optimizer = torch.optim.Adam(encoder.parameters(), lr=LR)
+    encoder = Encoder().to(device)
+    head = nn.Linear(64, 3).to(device)
+    optimizer = torch.optim.Adam(list(encoder.parameters()) + list(head.parameters()), lr=LR)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=N_EPOCHS, eta_min=ETA_MIN)
 
     best_val_acc = 0.0
     for epoch in range(N_EPOCHS):
         encoder.train()
+        head.train()
         batches = list(make_batches(train_data, BATCH_SIZE, device))
         for batch_idx, (imgs, labels) in enumerate(batches):
-            loss = F.cross_entropy(encoder(imgs), labels)
+            loss = F.cross_entropy(head(encoder(imgs)), labels)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             print(f"\re{epoch:3d} b{batch_idx + 1:3d}/{len(batches)} | loss {loss:.4f}", end="")
         scheduler.step()
-        train_acc = accuracy(encoder, train_data, device)
-        val_acc = accuracy(encoder, val_data, device)
+        train_acc = accuracy(encoder, head, train_data, device)
+        val_acc = accuracy(encoder, head, val_data, device)
         if not args.nosave and val_acc > best_val_acc:
             best_val_acc = val_acc
-            torch.save({"encoder": encoder.state_dict()}, "data/lejepa_classifier_final.pt")
+            torch.save({"encoder": encoder.state_dict(), "head": head.state_dict()},
+                       "data/lejepa_classifier_final.pt")
         print(f"\re{epoch:3d} | loss {loss:.4f} | train_acc {train_acc:.3f} | val_acc {val_acc:.3f}", end="")
         wandb.log({"loss": loss.item(), "train_acc": train_acc, "val_acc": val_acc}, step=epoch)
         encoder.train()
+        head.train()
     print()
     wandb.finish()

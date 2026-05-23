@@ -2,6 +2,28 @@ import math
 import torch
 import matplotlib.pyplot as plt
 
+COLOR_NAMES = ["Red", "Orange", "Yellow", "Lime", "Green", "Cyan", "Sky", "Blue", "Purple", "Magenta"]
+
+RAINBOW_COLORS = [
+    torch.tensor([1.0, 0.0, 0.0]),
+    torch.tensor([1.0, 0.5, 0.0]),
+    torch.tensor([1.0, 1.0, 0.0]),
+    torch.tensor([0.5, 1.0, 0.0]),
+    torch.tensor([0.0, 1.0, 0.0]),
+    torch.tensor([0.0, 1.0, 1.0]),
+    torch.tensor([0.0, 0.5, 1.0]),
+    torch.tensor([0.0, 0.0, 1.0]),
+    torch.tensor([0.5, 0.0, 1.0]),
+    torch.tensor([1.0, 0.0, 1.0]),
+]
+
+
+def random_bg(fg, min_dist=0.4):
+    while True:
+        bg = torch.rand(3)
+        if torch.norm(bg - fg) >= min_dist:
+            return bg
+
 
 def random_distinct_colors(n, min_dist=0.4):
     colors = []
@@ -21,8 +43,10 @@ def max_fit(cx, cy, canvas=64):
     return min(cx, canvas - cx, cy, canvas - cy)
 
 
-def make_square_image():
-    bg, fg = random_distinct_colors(2)
+def make_square_image(fg=None):
+    bg = random_bg(fg) if fg is not None else None
+    if bg is None:
+        bg, fg = random_distinct_colors(2)
     image = bg[:, None, None].expand(3, 64, 64).clone()
     cx, cy = random_center()
     half = torch.randint(8, min(16, max_fit(cx, cy)) + 1, (1,)).item()
@@ -30,8 +54,10 @@ def make_square_image():
     return image
 
 
-def make_circle_image():
-    bg, fg = random_distinct_colors(2)
+def make_circle_image(fg=None):
+    bg = random_bg(fg) if fg is not None else None
+    if bg is None:
+        bg, fg = random_distinct_colors(2)
     image = bg[:, None, None].expand(3, 64, 64).clone()
     cx, cy = random_center()
     radius = torch.randint(10, min(18, max_fit(cx, cy)) + 1, (1,)).item()
@@ -41,8 +67,10 @@ def make_circle_image():
     return image
 
 
-def make_triangle_image():
-    bg, fg = random_distinct_colors(2)
+def make_triangle_image(fg=None):
+    bg = random_bg(fg) if fg is not None else None
+    if bg is None:
+        bg, fg = random_distinct_colors(2)
     image = bg[:, None, None].expand(3, 64, 64).clone()
     cx, cy = random_center()
     R = torch.randint(12, min(20, max_fit(cx, cy)) + 1, (1,)).item()

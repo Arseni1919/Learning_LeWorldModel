@@ -5,8 +5,9 @@ import matplotlib.pyplot as plt
 import wandb
 from lewm.sigreg import SIGReg
 from lejepa.encoder import Encoder
-from lejepa.predictor import Predictor
-from lejepa.fig_gen import make_square_image, make_circle_image, make_triangle_image
+from lejepa.predictor import PredictorConcat as Predictor
+from lejepa.fig_gen import make_square_image, make_circle_image, make_triangle_image, RAINBOW_COLORS, COLOR_NAMES
+from lejepa.utils import evaluate_2d, evaluate_3d, evaluate_nd
 
 MAKERS = [make_square_image, make_circle_image, make_triangle_image]
 LABELS = ["Square", "Circle", "Triangle"]
@@ -17,7 +18,9 @@ LAMBDA = 0.1
 N_EPOCHS = 500
 LATENT_DIM = 2
 SAVE_EVERY = 10
-DATA_SIZE = BATCH_SIZE * 10
+DATA_SIZE = BATCH_SIZE * 40
+DATA_SOURCE = "shapes"  # "shapes" or "colors"
+# DATA_SOURCE = "colors"  # "shapes" or "colors"
 
 
 def plot_pair(img1, img2):
@@ -37,6 +40,15 @@ def make_dataset(n=1000):
     for label, maker in enumerate(MAKERS):
         for _ in range(n):
             data.append((maker(), label))
+    return data
+
+
+def make_color_dataset(n=1000):
+    data = []
+    for label, color in enumerate(RAINBOW_COLORS):
+        for _ in range(n):
+            maker = MAKERS[torch.randint(0, len(MAKERS), (1,)).item()]
+            data.append((maker(fg=color), label))
     return data
 
 
@@ -62,25 +74,11 @@ def latent_stats(z):
     return var.mean().item(), (var < 0.01).sum().item()
 
 
-def evaluate(encoder, device):
-    encoder.eval()
-    colors = ["tab:red", "tab:blue", "tab:green"]
-    fig, ax = plt.subplots(figsize=(5, 5), num="latent", clear=True)
-    with torch.no_grad():
-        for maker, label, color in zip(MAKERS, LABELS, colors):
-            imgs = torch.stack([maker() for _ in range(20)]).to(device)
-            z = encoder(imgs)
-            ax.scatter(z[:, 0].cpu(), z[:, 1].cpu(), c=color, label=label, alpha=0.7)
-    ax.legend()
-    plt.tight_layout()
-    plt.pause(0.01)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--notrack", action="store_true")
     parser.add_argument("--nosave", action="store_true")
-    parser.add_argument("--latent-dim", type=int, default=LATENT_DIM)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -88,14 +86,14 @@ if __name__ == "__main__":
 
     wandb.init(
         project="lejepa-shapes",
-        config={"lr": LR, "lambda": LAMBDA, "batch_size": BATCH_SIZE, "n_epochs": N_EPOCHS,
-                "latent_dim": args.latent_dim},
+        config={"lr": LR, "lambda": LAMBDA, "batch_size": BATCH_SIZE, "n_epochs": N_EPOCHS},
         mode="disabled" if args.notrack else "online",
     )
 
-    data = make_dataset(DATA_SIZE)
-    encoder = Encoder(latent_dim=args.latent_dim).to(device)
-    predictor = Predictor(latent_dim=args.latent_dim).to(device)
+    data = make_color_dataset(DATA_SIZE) if DATA_SOURCE == "colors" else make_dataset(DATA_SIZE)
+    n_classes = len(set(label for _, label in data))
+    encoder = Encoder(latent_dim=LATENT_DIM).to(device)
+    predictor = Predictor(latent_dim=LATENT_DIM, n_classes=n_classes).to(device)
     sigreg = SIGReg().to(device)
     optimizer = torch.optim.Adam(list(encoder.parameters()) + list(predictor.parameters()), lr=LR)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=N_EPOCHS, eta_min=ETA_MIN)
@@ -126,9 +124,18 @@ if __name__ == "__main__":
             }, step=step)
             step += 1
         scheduler.step()
-        if args.latent_dim == 2:
-            evaluate(encoder, device)
-            encoder.train()
+        if DATA_SOURCE == "colors":
+            eval_makers = [lambda c=color: make_square_image(fg=c) for color in RAINBOW_COLORS]
+            eval_labels, eval_colors = COLOR_NAMES, RAINBOW_COLORS
+        else:
+            eval_makers, eval_labels, eval_colors = MAKERS, LABELS, None
+        if LATENT_DIM == 2:
+            evaluate_2d(encoder, eval_makers, eval_labels, device, colors=eval_colors)
+        elif LATENT_DIM == 3:
+            evaluate_3d(encoder, eval_makers, eval_labels, device, colors=eval_colors)
+        else:
+            evaluate_nd(encoder, eval_makers, eval_labels, device, colors=eval_colors)
+        encoder.train()
         wandb.log({"lr": scheduler.get_last_lr()[0]}, step=step)
         if not args.nosave and epoch % SAVE_EVERY == 0 and epoch > 0:
             torch.save({"encoder": encoder.state_dict()}, f"data/lejepa_checkpoint.pt")
