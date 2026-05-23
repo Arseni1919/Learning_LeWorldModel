@@ -13,7 +13,7 @@ BATCH_SIZE = 64
 LR = 1e-4
 ETA_MIN = 1e-5
 LAMBDA = 0.1
-N_EPOCHS = 100
+N_EPOCHS = 500
 SAVE_EVERY = 10
 DATA_SIZE = 7680
 
@@ -119,9 +119,9 @@ if __name__ == "__main__":
                 "reg_loss": reg_loss.item(), "mean_var": mean_var, "dead_dims": dead_dims,
             }, step=step)
             step += 1
-            if (batch_idx + 1) % 10 == 0:
-                evaluate(encoder, axes, device)
-                encoder.train()
+            # if (batch_idx + 1) % 10 == 0:
+            #     evaluate(encoder, axes, device)
+            #     encoder.train()
         scheduler.step()
         wandb.log({"lr": scheduler.get_last_lr()[0]}, step=step)
         if not args.nosave and epoch % SAVE_EVERY == 0 and epoch > 0:
