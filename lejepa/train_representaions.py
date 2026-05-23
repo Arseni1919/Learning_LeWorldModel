@@ -5,17 +5,19 @@ import matplotlib.pyplot as plt
 import wandb
 from lewm.sigreg import SIGReg
 from lejepa.encoder import Encoder
+from lejepa.predictor import Predictor
 from lejepa.fig_gen import make_square_image, make_circle_image, make_triangle_image
 
 MAKERS = [make_square_image, make_circle_image, make_triangle_image]
 LABELS = ["Square", "Circle", "Triangle"]
 BATCH_SIZE = 64
-LR = 1e-4
+LR = 1e-3
 ETA_MIN = 1e-5
 LAMBDA = 0.1
 N_EPOCHS = 500
+LATENT_DIM = 2
 SAVE_EVERY = 10
-DATA_SIZE = 7680
+DATA_SIZE = BATCH_SIZE * 10
 
 
 def plot_pair(img1, img2):
@@ -42,16 +44,17 @@ def make_batches(data, batch_size, device):
     by_class = {}
     for img, label in data:
         by_class.setdefault(label, []).append(img)
-    batches = []
-    for imgs in by_class.values():
-        idx = torch.randperm(len(imgs))
-        imgs = [imgs[i] for i in idx]
-        for i in range(0, len(imgs) - batch_size, batch_size):
-            batches.append(imgs[i:i + batch_size])
-    idx = torch.randperm(len(batches))
-    batches = [batches[i] for i in idx]
-    for batch in batches:
-        yield torch.stack(batch).to(device)
+    n_classes = len(by_class)
+    for _ in range(len(data) // batch_size):
+        labels = torch.randint(0, n_classes, (batch_size,))
+        one_hots = F.one_hot(labels, n_classes).float().to(device)
+        imgs1, imgs2 = [], []
+        for lbl in labels.tolist():
+            cls_imgs = by_class[lbl]
+            i, j = torch.randint(0, len(cls_imgs), (2,)).tolist()
+            imgs1.append(cls_imgs[i])
+            imgs2.append(cls_imgs[j])
+        yield torch.stack(imgs1).to(device), torch.stack(imgs2).to(device), one_hots
 
 
 def latent_stats(z):
@@ -59,16 +62,17 @@ def latent_stats(z):
     return var.mean().item(), (var < 0.01).sum().item()
 
 
-def evaluate(encoder, axes, device):
+def evaluate(encoder, device):
     encoder.eval()
+    colors = ["tab:red", "tab:blue", "tab:green"]
+    fig, ax = plt.subplots(figsize=(5, 5), num="latent", clear=True)
     with torch.no_grad():
-        for ax, maker, label in zip(axes, MAKERS, LABELS):
-            img = maker().unsqueeze(0).to(device)
-            out = encoder(img).squeeze().cpu().numpy()
-            ax.cla()
-            ax.imshow(out.reshape(8, 8), cmap="gray")
-            ax.set_title(label)
-            ax.axis("off")
+        for maker, label, color in zip(MAKERS, LABELS, colors):
+            imgs = torch.stack([maker() for _ in range(20)]).to(device)
+            z = encoder(imgs)
+            ax.scatter(z[:, 0].cpu(), z[:, 1].cpu(), c=color, label=label, alpha=0.7)
+    ax.legend()
+    plt.tight_layout()
     plt.pause(0.01)
 
 
@@ -76,6 +80,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--notrack", action="store_true")
     parser.add_argument("--nosave", action="store_true")
+    parser.add_argument("--latent-dim", type=int, default=LATENT_DIM)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -83,33 +88,34 @@ if __name__ == "__main__":
 
     wandb.init(
         project="lejepa-shapes",
-        config={"lr": LR, "lambda": LAMBDA, "batch_size": BATCH_SIZE, "n_epochs": N_EPOCHS},
+        config={"lr": LR, "lambda": LAMBDA, "batch_size": BATCH_SIZE, "n_epochs": N_EPOCHS,
+                "latent_dim": args.latent_dim},
         mode="disabled" if args.notrack else "online",
     )
 
     data = make_dataset(DATA_SIZE)
-    encoder = Encoder().to(device)
+    encoder = Encoder(latent_dim=args.latent_dim).to(device)
+    predictor = Predictor(latent_dim=args.latent_dim).to(device)
     sigreg = SIGReg().to(device)
-    optimizer = torch.optim.Adam(encoder.parameters(), lr=LR)
+    optimizer = torch.optim.Adam(list(encoder.parameters()) + list(predictor.parameters()), lr=LR)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=N_EPOCHS, eta_min=ETA_MIN)
 
     plt.ion()
-    fig, axes = plt.subplots(1, 3, figsize=(9, 3))
-    fig.suptitle("Encoder outputs")
 
     step = 0
     for epoch in range(N_EPOCHS):
         encoder.train()
-        for batch_idx, imgs in enumerate(make_batches(data, BATCH_SIZE, device)):
-            Z = encoder(imgs).flatten(1)
-            z_mean = Z.mean(dim=0, keepdim=True)
-            pred_loss = F.mse_loss(Z, z_mean.expand_as(Z))
-            reg_loss = sigreg(Z.unsqueeze(0))
+        for batch_idx, (imgs1, imgs2, one_hots) in enumerate(make_batches(data, BATCH_SIZE, device)):
+            z1 = encoder(imgs1)
+            z2 = encoder(imgs2)
+            z_pred = predictor(z1, one_hots)
+            pred_loss = F.mse_loss(z_pred, z2)
+            reg_loss = sigreg(torch.stack([z_pred, z2]))
             loss = pred_loss + LAMBDA * reg_loss
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            mean_var, dead_dims = latent_stats(Z)
+            mean_var, dead_dims = latent_stats(z2)
             lr = optimizer.param_groups[0]["lr"]
             print(f"\re{epoch:3d} b{batch_idx:3d} | loss {loss:.4f}"
                   f" | pred {pred_loss:.4f} | sig {reg_loss:.4f}"
@@ -119,10 +125,10 @@ if __name__ == "__main__":
                 "reg_loss": reg_loss.item(), "mean_var": mean_var, "dead_dims": dead_dims,
             }, step=step)
             step += 1
-            # if (batch_idx + 1) % 10 == 0:
-            #     evaluate(encoder, axes, device)
-            #     encoder.train()
         scheduler.step()
+        if args.latent_dim == 2:
+            evaluate(encoder, device)
+            encoder.train()
         wandb.log({"lr": scheduler.get_last_lr()[0]}, step=step)
         if not args.nosave and epoch % SAVE_EVERY == 0 and epoch > 0:
             torch.save({"encoder": encoder.state_dict()}, f"data/lejepa_checkpoint.pt")

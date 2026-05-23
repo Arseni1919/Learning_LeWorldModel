@@ -11,7 +11,7 @@ class Normalize(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self):
+    def __init__(self, latent_dim: int = 64):
         super().__init__()
         self.net = nn.Sequential(
             Normalize(),
@@ -26,7 +26,9 @@ class Encoder(nn.Module):
         self.mlp = nn.Sequential(
             nn.Linear(24 * 8 * 8, 128),
             nn.ReLU(),
-            nn.Linear(128, 64)
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, latent_dim)
         )
 
     def forward(self, x):
