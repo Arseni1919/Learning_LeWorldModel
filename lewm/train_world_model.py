@@ -78,7 +78,7 @@ if __name__ == "__main__":
     BATCH_SIZE = 256
     LR = 1e-4
     LAMBDA = 1.0
-    N_EPOCHS = 300
+    N_EPOCHS = 1200
     SAVE_EVERY = 10
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

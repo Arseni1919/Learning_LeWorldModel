@@ -1,8 +1,36 @@
 # LeWorldModel — LunarLander Adaptation
 
+---
+
+## Project TODO
+
+- [x] Stage Encoder
+- [x] Stage Predictor
+- [x] (Failed) Stage SIGReg + full training loop
+- [x] (Failed) Stage Latent planning (CEM + MPC)
+- [x] (Failed) Incorporate reward model into the world (encoder input = [obs, signed_log(reward)]; decoder output = [obs, reward_log])
+- [x] (Failed) Closed-loop action execution:
+        init world model NNs, and policy pi
+        while True:
+            data = collect(pi)
+            wm = learnWM(data)
+            pi = learnPolicy(wm)
+- [x] (Worked) classification and latent representation of classes by LeJEPA - `lejepa` folder
+- [ ] to examine PCA of actions in some RL environment
+  - [ ] Example RL env: a 64x64 image of a circle, square, or triangle. the action: pick a picksel and push, the next obs, if the pixel is inside the shape then the shape will move up (or will move to the side of the type of push), if the pixel is not inside a shape - nothing happens. This should teach the agent to push things. This env also will allow to plan steps
+- [ ] Baseline comparison
+
+---
+
+## Ablation Studies
+
+- [ ] Latent dimension size
+
+---
+
 ## Project Goal
 
-Adapt the **LeWorldModel (LeWM)** algorithm to the `LunarLander-v3` gymnasium environment.
+Adapt the **LeWorldModel (LeWM)** algorithm to the `LunarLander-v3` gymnasium environment or another suitable environment.
 LeWM is a Joint Embedding Predictive Architecture (JEPA) that learns a latent world model from
 raw pixel observations end-to-end, without reconstruction losses, reward signals, or pre-trained
 encoders. We will implement it from scratch, then compare it against standard baselines.
@@ -135,32 +163,8 @@ The reward predictor therefore needs `(prev_obs, obs, action)` as input.
 - Terminal: `±100`
 - Full episode total: typically `[-500, +300]` depending on policy quality
 
----
-
-## Project TODO
-
 Note: architectures will differ from the paper — LunarLander has different observation/action
 characteristics than the original paper's environments.
-
-- [x] Stage 1 — Encoder
-- [x] Stage 2 — Predictor
-- [x] Stage 3 — SIGReg + full training loop
-- [x] Stage 4 — Latent planning (CEM + MPC)
-- [x] Incorporate reward model into the world (encoder input = [obs, signed_log(reward)]; decoder output = [obs, reward_log])
-- [x] Closed-loop action execution:
-        init world model NNs, and policy pi
-        while True:
-            data = collect(pi)
-            wm = learnWM(data)
-            pi = learnPolicy(wm)
-- [ ] to find the idea to use the learnt WM + Planning to solve any simple task that is easy to understand
-- [ ] Baseline comparison
-
----
-
-## Ablation Studies
-
-- [ ] Latent dimension size
 
 ---
 
